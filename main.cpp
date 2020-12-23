@@ -4,19 +4,27 @@
 #include <chrono>
 #include <fstream>
 #include <limits.h>
+#include <pthread.h>
 
 /*Hyperparams*/
-#define PARAMS_population_size 10000
-#define PARAMS_survival_size 1000
-#define PARAMS_genotype_length 1600
-#define PARAMS_mutation_rate 0.05
+#define PARAMS_population_size 25000
+#define PARAMS_survival_size 10000
+#define PARAMS_num_elites 5000
+#define PARAMS_genotype_length 800
+#define PARAMS_mutation_rate_DEFAULT 0.005
 #define PARAMS_instance_per_phone_target 60
 #define PARAMS_zero_padded_sentence_space 120000
-#define PARAMS_epochs 100
-#define PARAMS_parents 2
-#define PARAMS_time_epochs 1
+#define PARAMS_NO_CHANGE_THERSHOLD 0.001
+#define PARAMS_HEAT_THRESHOLD 50
+#define PARAMS_HEAT_FACTOR 5
+#define PARAMS_HEAT_SUSTAIN_EPOCHS 5
+#define PARAMS_epochs 5000
+#define PARAMS_MAX_NUM_crossover_points 6
+#define PARAMS_MIN_NUM_crossover_points 2
+#define OUTPUT_epochs 100
 #define NUM_phones 399
 #define PRINT_info 1
+#define NUM_THREADS 10
 
 using namespace std;
 
@@ -34,24 +42,33 @@ void init_GA_pool();
 void init_random_indices();
 void init_survivor_indices();
 bool compare_cost(COST_AND_INDEX &a, COST_AND_INDEX &b);
+void* cost2alias(void* arg);
 int calc_loss(int genotype[]);
 void sort_population_by_cost();
 template <class T>
 void GA_swap (T *a, T *b);
 void yates_fischer_shuffle (int arr[], int n);
 void mate(int (&parent1)[], int (&parent2)[], int (&child)[], int num_crossover_points);
+void* mutate_partial(void* arg);
+void mutate();
 int compare_ints(const void* a, const void* b);
 void cost_curve_to_csv();
 void best_genotype_to_csv();
+void copy_genotype(int geno_dst[PARAMS_genotype_length], int geno_src[PARAMS_genotype_length]);
 
 /*GlobalVriables*/
+float PARAMS_mutation_rate = PARAMS_mutation_rate_DEFAULT;
+int THREAD_PART = 0;
 int tag_distro_space[PARAMS_zero_padded_sentence_space][NUM_phones];
 int GA_pool[PARAMS_population_size][PARAMS_genotype_length];
+int TEMP_pool[PARAMS_population_size][PARAMS_genotype_length];
 int random_indices[PARAMS_genotype_length-2];
 int survivor_indices[PARAMS_survival_size];
 int fittest_log[PARAMS_epochs];
 int min_cost=INT_MAX;
 int num_crossover;
+int num_epochs_without_change;
+int num_heated_epochs = 0;
 int best_genotype[PARAMS_genotype_length];
 COST_AND_INDEX cost_and_index[PARAMS_population_size];
 
@@ -185,23 +202,31 @@ int calc_loss(int genotype[]) {
     return cost;
 }
 
-void sort_population_by_cost() {
-    auto t1 = std::chrono::high_resolution_clock::now();
-    /*write cost2individual alias*/
-    for (int i=0; i<PARAMS_population_size; ++i) {
+void* cost2alias(void* arg) { 
+    int thread_part = THREAD_PART++; 
+  
+    for (int i = thread_part * (PARAMS_population_size / NUM_THREADS); i < (thread_part + 1) * (PARAMS_population_size / NUM_THREADS); i++) {
         cost_and_index[i].index = i;
         cost_and_index[i].cost =calc_loss(GA_pool[i]);
     }
-    auto t2 = std::chrono::high_resolution_clock::now();
-    auto duration = std::chrono::duration_cast<std::chrono::microseconds>( t2 - t1 ).count();
-    printf("calc time: %f", ((float)duration/1000000));
 
-    t1 = std::chrono::high_resolution_clock::now();
+    return(NULL);
+}
+
+void sort_population_by_cost() {
+    /*write cost2individual alias*/
+    /*create threads and assign task*/
+    pthread_t threads[NUM_THREADS];
+    for (int i = 0; i < NUM_THREADS; i++)
+        pthread_create(&threads[i], NULL, cost2alias, (void*)NULL);
+  
+    /* join threads */
+    for (int i = 0; i < NUM_THREADS; i++)
+        pthread_join(threads[i], NULL);
+    THREAD_PART = 0;
+
     /*SortAlias*/
     qsort(cost_and_index, PARAMS_population_size, sizeof(COST_AND_INDEX), compare_cost);
-    t2 = std::chrono::high_resolution_clock::now();
-    duration = std::chrono::duration_cast<std::chrono::microseconds>( t2 - t1 ).count();
-    printf("qsort time: %f", ((float)duration/1000000));
 }
 
 template <class T>
@@ -227,7 +252,7 @@ int compare_ints(const void* a, const void* b) {
     return 0;
 }
 
-void mate(int (&parent1)[PARAMS_genotype_length], int (&parent2)[PARAMS_genotype_length], int (&child)[PARAMS_genotype_length], int num_crossover_points) {
+void mate(int (&parent1)[PARAMS_genotype_length], int (&parent2)[PARAMS_genotype_length], int (&parent3)[PARAMS_genotype_length], int (&child)[PARAMS_genotype_length], int num_crossover_points) {
     yates_fischer_shuffle(random_indices, PARAMS_genotype_length);
     
     /*init crossover-points indices*/
@@ -241,27 +266,84 @@ void mate(int (&parent1)[PARAMS_genotype_length], int (&parent2)[PARAMS_genotype
     
     /*crossover*/
     for (int i=0; i<num_crossover_points+1; ++i) {
-        if (i%2 == 0) {
+        if (i%3 == 0) {
             memcpy(&child[points[i]], &parent1[points[i]], (points[i+1]-points[i])*sizeof(int));
         }
-        else {
+        else if (i%3 == 1) {
             memcpy(&child[points[i]], &parent2[points[i]], (points[i+1]-points[i])*sizeof(int));
+        }
+        else {
+            memcpy(&child[points[i]], &parent3[points[i]], (points[i+1]-points[i])*sizeof(int));
         }
     }
 }
 
-void mutate(int index) {
-    int random_index = rand()%((int)(PARAMS_genotype_length-PARAMS_genotype_length*PARAMS_mutation_rate));
-    int points[(int)(PARAMS_genotype_length*PARAMS_mutation_rate)];
-    memcpy(&points[0], &random_indices[random_index], sizeof(points));
+void* mate_partial(void* arg) {
+    yates_fischer_shuffle(survivor_indices, PARAMS_survival_size);
+    int thread_part = THREAD_PART++;
+    int parent1, parent2, parent3;
+    //int children_indices[(int)((PARAMS_population_size-PARAMS_survival_size) / NUM_THREADS)];
+    //int count = 0;
+    for (int child = thread_part * ((PARAMS_population_size-PARAMS_survival_size) / NUM_THREADS) + PARAMS_survival_size; \
+    child < (thread_part + 1) * ((PARAMS_population_size-PARAMS_survival_size) / NUM_THREADS) + PARAMS_survival_size; ++child) {
+        parent1 = (int)(rand() % PARAMS_num_elites);
+        parent2 = survivor_indices[parent1];
+        parent3 = survivor_indices[parent2];
+        num_crossover = (int)(rand()%(PARAMS_MAX_NUM_crossover_points-PARAMS_MIN_NUM_crossover_points) + PARAMS_MIN_NUM_crossover_points);
 
-    for (int i=0; i<(int)(sizeof(points)/sizeof(int)); ++i) {
-        GA_pool[index][points[i]] = (int)(rand()%PARAMS_zero_padded_sentence_space);
+        //children_indices[count]=cost_and_index[child].index;
+        //count++;
+
+        mate(GA_pool[cost_and_index[parent1].index], GA_pool[cost_and_index[parent2].index], GA_pool[cost_and_index[parent3].index],\
+         GA_pool[cost_and_index[child].index], num_crossover);
     }
+    /*
+    for (int i=0; i<(int)(sizeof(children_indices)/sizeof(children_indices[0])); ++i) {
+        copy_genotype(GA_pool[children_indices[i]], TEMP_pool[children_indices[i]]);
+    }
+    */
+    return(NULL);
 }
 
-void copy_genotype(int geno_dst[PARAMS_genotype_length], int geno_src[PARAMS_genotype_length]) {
-    memcpy(&geno_dst[0], &geno_src[0], PARAMS_genotype_length*sizeof(geno_dst[0]));
+void mate_task() {
+    /*create threads and assign task*/
+    pthread_t threads[NUM_THREADS];
+    for (int i = 0; i < NUM_THREADS; i++)
+        pthread_create(&threads[i], NULL, mate_partial, (void*)NULL);
+  
+    /* join threads */
+    for (int i = 0; i < NUM_THREADS; i++)
+        pthread_join(threads[i], NULL);
+    THREAD_PART = 0;
+}
+
+void* mutate_partial(void* arg) { 
+    int thread_part = THREAD_PART++;
+        
+    for (int i = thread_part * (PARAMS_population_size / NUM_THREADS); i < (thread_part + 1) * (PARAMS_population_size / NUM_THREADS); i++) {
+        float local_mutation_rate = PARAMS_mutation_rate * (float)(rand()%PARAMS_HEAT_FACTOR) / (float)(rand()%PARAMS_HEAT_FACTOR+1);
+        int random_index = rand()%((int)(PARAMS_genotype_length-PARAMS_genotype_length*local_mutation_rate));
+        int points[(int)(PARAMS_genotype_length*local_mutation_rate)];
+        memcpy(&points[0], &random_indices[random_index], sizeof(points));
+
+        for (int j=0; j<(int)(sizeof(points)/sizeof(int)); ++j) {
+            GA_pool[i][points[j]] = (int)(rand()%PARAMS_zero_padded_sentence_space);
+        }
+    }
+
+    return(NULL);
+}
+
+void mutate() {
+    /*create threads and assign task*/
+    pthread_t threads[NUM_THREADS];
+    for (int i = 0; i < NUM_THREADS; i++)
+        pthread_create(&threads[i], NULL, mutate_partial, (void*)NULL);
+  
+    /* join threads */
+    for (int i = 0; i < NUM_THREADS; i++)
+        pthread_join(threads[i], NULL);
+    THREAD_PART = 0;
 }
 
 void cost_curve_to_csv() {
@@ -284,6 +366,10 @@ void best_genotype_to_csv() {
     printf("\nBest genotype output done.\n");
 }
 
+void copy_genotype(int geno_dst[PARAMS_genotype_length], int geno_src[PARAMS_genotype_length]) {
+    memcpy(&geno_dst[0], &geno_src[0], PARAMS_genotype_length*sizeof(geno_dst[0]));
+}
+
 int main() {
     init_tag_distro_space();
     init_random_indices();
@@ -293,59 +379,57 @@ int main() {
     init_GA_pool();
 
     printf("calc_cost test %d\n", calc_loss(GA_pool[0]));
-    
+
     for(int epoch=0; epoch<PARAMS_epochs; ++epoch) {
         /* time starts */
         auto t1 = std::chrono::high_resolution_clock::now();
 
+
         /* evaluate and sort population */
         sort_population_by_cost();
         fittest_log[epoch] = cost_and_index[0].cost;
+
+        if (abs(fittest_log[epoch]-min_cost)<min_cost*PARAMS_NO_CHANGE_THERSHOLD) {
+            num_epochs_without_change++;
+        }
+        else {
+            num_heated_epochs = 0;
+            num_epochs_without_change = 0;
+        }
+
         if (fittest_log[epoch]<min_cost) {
             min_cost = fittest_log[epoch];
             copy_genotype(best_genotype, GA_pool[cost_and_index[0].index]);
         }
 
+        /* mating */
+        mate_task();
+
+        /* mutate all */
+        if (num_epochs_without_change>=PARAMS_HEAT_THRESHOLD) {
+            num_heated_epochs++;
+            PARAMS_mutation_rate = PARAMS_mutation_rate_DEFAULT*PARAMS_HEAT_FACTOR;
+            printf("HEATed by %d ", PARAMS_HEAT_FACTOR);
+        }
+        else PARAMS_mutation_rate = PARAMS_mutation_rate_DEFAULT;
+        mutate();
+        
+        if (num_heated_epochs>=PARAMS_HEAT_SUSTAIN_EPOCHS) {
+            num_heated_epochs = 0;
+            num_epochs_without_change = 0;
+        }
+
         /* time stops */
         auto t2 = std::chrono::high_resolution_clock::now();
         auto duration = std::chrono::duration_cast<std::chrono::microseconds>( t2 - t1 ).count();
-        printf("sort time: %f", ((float)duration/1000000));
-
-        /* time starts */
-        t1 = std::chrono::high_resolution_clock::now();
-
-        /* mating */
-        int parent1, parent2;
-        for (int child=PARAMS_survival_size; child<PARAMS_population_size; ++child) {
-            yates_fischer_shuffle(survivor_indices, PARAMS_survival_size);
-            parent1 = survivor_indices[(int)(child % PARAMS_survival_size)];
-            parent2 = survivor_indices[parent1];
-            num_crossover = (int)(rand()%5 + 3);
-            mate(GA_pool[cost_and_index[parent1].index], GA_pool[cost_and_index[parent2].index], GA_pool[cost_and_index[child].index], num_crossover);
-        }
-
-        /* time stops */
-        t2 = std::chrono::high_resolution_clock::now();
-        duration = std::chrono::duration_cast<std::chrono::microseconds>( t2 - t1 ).count();
-        printf("mate time: %f", ((float)duration/1000000));
-
-        /* time starts */
-        t1 = std::chrono::high_resolution_clock::now();
-
-        /* mutate all */
-        for (int individual=0; individual<PARAMS_population_size; ++individual) {
-            mutate(individual);
-        }
-
-        /* time stops */
-        t2 = std::chrono::high_resolution_clock::now();
-        duration = std::chrono::duration_cast<std::chrono::microseconds>( t2 - t1 ).count();
-        printf("mutate time: %f", ((float)duration/1000000));
-
-        
 
         if (epoch%PRINT_info == 0) {
-            printf("\nMin cost of epoch %d : %d, time/epoch: %f sec", epoch, fittest_log[epoch], ((float)duration/1000000));
+            printf(" Min cost of epoch %d: %d, secs/epoch: %f\n", epoch, fittest_log[epoch], ((float)duration/1000000));
+        }
+
+        if (epoch != 0 && epoch%OUTPUT_epochs == 0) {
+            cost_curve_to_csv();
+            best_genotype_to_csv();
         }
     }
 
