@@ -35,31 +35,34 @@ def splittext(texts):
             output_texts.append(foo)
     return output_texts
 
-sample_portion = 0.01
-limit = 100000
+sample_portion = 0
+limit = np.inf
 count = 1
 sentence_length_upper_limit = 100
 sentence_length_lower_limit = 10
 sentence_lengths = []
 
 text_dir = 'texts'
-with open('SUBSET.txt', 'w', encoding="utf8") as ostr:
-    for file_n in listdir_nohidden(text_dir):
-        filename = os.fsdecode(file_n)
+with open('ULTRA_SUBSET.txt', 'w', encoding="utf8") as ostr:
+    for file in listdir_nohidden(text_dir):
+        filename = os.fsdecode(file)
         if filename.endswith(".txt"):
-            if filename == 'wiki.txt':
-                sample_portion = 0.01
-            else:
-                sample_portion = 0.1
-                
             with open(os.path.join(text_dir, filename), 'r', encoding="utf8") as istr:
                         
                 for paragraph in istr:
                     lines = splittext(paragraph)
                     for line in lines:
+
+                        if (filename=='wiki.txt'):
+                                sample_portion = 0.02
+                        else:
+                            sample_portion = 0.2
+                                
                         if len(line) > sentence_length_lower_limit and np.random.rand() < sample_portion:
                             nummer = str(count).zfill(9)
                             line = line.rstrip("\n")
+
+                            
 
                             if len(line) > sentence_length_upper_limit or There_is_English(line):
                                 continue

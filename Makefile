@@ -2,7 +2,7 @@
 # Variables to control Makefile operation
 
 CXX = g++
-CXXFLAGS = -pthread -Wall -g
+CXXFLAGS = -pthread -Wall -g -std=c++11
 # the build target executable:
 TARGET = main
 
