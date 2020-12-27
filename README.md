@@ -3,17 +3,17 @@ Generate phonetically balanced Mandarin script with Wiki-Database and GA (geneti
 
 ## Run instruction:
 1. Sample a subset of the original corpus:
-  - :python3 `get.py`
+  - `:python3 get.py`
 
 2. Convert the Chinese characters to phonetic representations:
-  - :python3 `text2phones.py`
+  - `:python3 text2phones.py`
   
 3. Convert each sentence to a distribution of CVC combinations:
-  - :python3 `sentences2tag_stats.py`
+  - `:python3 sentences2tag_stats.py`
   
 4. Run GA:
-  - :`make`
-  - :`./main`
+  - `:make`
+  - `:./main`
   
 5. Assemble the sentences specified by the final genotype:
-  - :python3 `assemble.py`
+  - `:python3 assemble.py`
