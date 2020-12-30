@@ -32,6 +32,7 @@ phones_dict_per_line = phones_dict_master.copy()
 dict_string2int(phones_dict_master)
 dict_string2int(phones_dict_per_line, set_value=0)
 
+write_limit = 1000000
 in_filename = 'ULTRA_PHONED.txt'
 out_filename = 'ULTRA_sentence_phoneDist.csv'
 out_file = open(out_filename, 'w', newline ='')
@@ -53,8 +54,8 @@ with out_file:
     with open(in_filename, 'r', encoding="utf8") as istr:
         count = 0
         for line in istr:
-            #if count >= 100:
-            #    break
+            if count >= write_limit:
+                break
             phone_distro = sentence2stats(line=line, phones_dict_per_line=phones_dict_per_line)
 
             write = csv.writer(out_file)

@@ -17,7 +17,7 @@ num_chars = 0
 with open(genotype_csv_filename, newline='') as csvfile:
     genotype_csv = csv.reader(csvfile, delimiter=' ', quotechar='|')
     for row in genotype_csv:
-        nummer = str(int(row[0])).zfill(9)
+        nummer = str(int(row[0])-1).zfill(9)
         print(nummer)
         genotype_best.append(nummer)
 
