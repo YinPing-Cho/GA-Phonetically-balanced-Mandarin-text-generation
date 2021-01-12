@@ -8,30 +8,43 @@
 
 /*THIS IS FOR ULTRA*/
 /*Hyperparams*/
-#define PARAMS_population_size 24000
-#define PARAMS_survival_size 7200
-#define PARAMS_num_elites 2400
+#define CSV_filename "cpp_exp_clustered_BIG_sentence_phoneDist.csv"//"cpp_exp_word_count_BIG_sentence_phoneDist.csv"
+#define Output_CostCurve_filename "CLcpp_word_count_BIG_GA_cost_log.csv"
+#define Output_PhenotypeDistribution_filename "CLcpp_word_count_BIG_best_pheno_distro.csv"
+#define Output_Genotype_filename "CLcpp_word_count_BIG_best_genotype.csv"
+#define PARAMS_population_size 19200
+#define PARAMS_survival_size 9600
+#define PARAMS_num_elites 4800
 #define PARAMS_genotype_length 1000
+#define PARAMS_real_sentence_space 600000
+#define PARAMS_zero_padded_sentence_space 800000
 #define PARAMS_mutation_rate_DEFAULT 0.0001
+#define PARAMS_mutation_search_portion 0.1
+#define PARAMS_mutation_search_NUM (int)(PARAMS_zero_padded_sentence_space*PARAMS_mutation_search_portion-1.0)
 #define PARAMS_instance_per_phone_target 60
 #define PARAMS_full_total_word_constraint_starts 0.05
 #define PARAMS_full_total_word_constraint_steady 0.1
-#define PARAMS_real_sentence_space 229343
-#define PARAMS_zero_padded_sentence_space 250000
 #define PARAMS_SAMPLING_FACTOR 50
 #define PARAMS_HEAT_FACTOR 10
 #define PARAMS_epochs 10000
 #define PARAMS_MAX_NUM_crossover_points 5
 #define PARAMS_MIN_NUM_crossover_points 2
+#define PARAMS_MATE_master_preservation 0.6
+#define PARAMS_MATE_parent2_preservation 0.3
+#define PARAMS_MATE_parent3_preservation 0.1
 #define OUTPUT_epochs 100
 #define PRINT_info 1
-#define NUM_phones 400
-#define NUM_THREADS 12
+#define NUM_phones 405
+#define NUM_valid_phones 396
+#define NUM_THREADS 8
 #define NUM_syllables_target 24500
 #define NUM_syllable_error_allowance 500
-#define L1(X)            (abs(X-NUM_syllables_target))
-#define L2(X)            (L1(X)*L1(X))
-#define LooseL2loss(X)   ( L2(X)*(L1(X)>NUM_syllable_error_allowance) )
+#define L1(X)               (abs(X-NUM_syllables_target))
+#define L2(X)               (L1(X)*L1(X))
+#define LooseL2loss(X)      ( L2(X)*(L1(X)>NUM_syllable_error_allowance) )
+#define RoundInRange(X,Y)   ( ((X+Y) >= PARAMS_zero_padded_sentence_space) ? (X-Y) : (((X+Y)<0) ? (X-Y) : (X+Y)))
+#define BlendParents(X,Y,Z) (int)(X*PARAMS_MATE_master_preservation+Y*PARAMS_MATE_parent2_preservation+Z*PARAMS_MATE_parent3_preservation)
+#define CalcChild(X,Y,Z)    ( min(PARAMS_zero_padded_sentence_space-1, BlendParents(X,Y,Z)) )
 
 using namespace std;
 
@@ -71,9 +84,8 @@ void copy_genotype(int geno_dst[PARAMS_genotype_length], int geno_src[PARAMS_gen
 int GLOBAL_EPOCH=0;
 float PARAMS_mutation_rate = PARAMS_mutation_rate_DEFAULT;
 int THREAD_PART = 0;
-int tag_distro_space[PARAMS_zero_padded_sentence_space][NUM_phones];
-int GA_pool[PARAMS_population_size][PARAMS_genotype_length];
-int TEMP_pool[PARAMS_population_size][PARAMS_genotype_length];
+static int tag_distro_space[PARAMS_zero_padded_sentence_space][NUM_phones];
+static int GA_pool[PARAMS_population_size][PARAMS_genotype_length];
 int random_indices[NUM_THREADS][PARAMS_genotype_length-2];
 int survivor_indices[NUM_THREADS][PARAMS_survival_size];
 int fittest_log[PARAMS_epochs];
@@ -83,7 +95,9 @@ int best_phenotype_distribution[NUM_phones]={};
 COST_AND_INDEX cost_and_index[PARAMS_population_size];
 
 void reset_best_phenotype_distribution() {
-    for (int i=0; i < NUM_phones; ++i) best_phenotype_distribution[i] = 0;
+    for (int i=0; i < NUM_phones; ++i) {
+    best_phenotype_distribution[i] = 0;
+    }
 }
 
 void init_tag_distro_space() {
@@ -97,11 +111,11 @@ void init_tag_distro_space() {
 
 void init_random_indices() {
     for (int j=0; j<NUM_THREADS; ++j) {
-        for (int i=0; i<PARAMS_genotype_length; ++i) {
+        for (int i=0; i<PARAMS_genotype_length-2; ++i) {
         random_indices[j][i] = i;
         }
     }
-    printf("random_indices MAX_val is %d\n", random_indices[NUM_THREADS-1][PARAMS_genotype_length-1]);
+    printf("random_indices MAX_val is %d\n", random_indices[NUM_THREADS-1][PARAMS_genotype_length-3]);
 }
 
 void init_survivor_indices() {
@@ -134,7 +148,7 @@ void LoadCSVdata() {
     char row_buffer[1024];
     char number_buffer[10];
     
-    FILE* stream = fopen("ULTRA_cpp_sentence_phoneDist.csv", "r");
+    FILE* stream = fopen(CSV_filename, "r");
 
     if(stream == NULL) {
       perror("Error opening file");
@@ -212,7 +226,7 @@ int calc_loss(int genotype[]) {
             printf("genotype overflow");
         }
     }
-    for (int i=0; i<NUM_phones; ++i) {
+    for (int i=0; i<NUM_valid_phones; ++i) {
         cost += abs(PARAMS_instance_per_phone_target-pheno_distribution[i]);
     }
     float suppress_ratio = ((float)GLOBAL_EPOCH/(float)PARAMS_epochs*PARAMS_full_total_word_constraint_starts);
@@ -277,12 +291,31 @@ int thread_part, int num_crossover_points, int rnd_index) {
     int points[num_crossover_points+2]; //plus 0 and end
     points[0] = 0;
     points[num_crossover_points+1] = PARAMS_genotype_length-1;
-    memcpy(&points[1], &random_indices[thread_part][rnd_index % (PARAMS_genotype_length-2) - num_crossover_points], num_crossover_points*sizeof(int));
+    memcpy(&points[1], &random_indices[thread_part][max(((rnd_index%(PARAMS_genotype_length-2)) - num_crossover_points), 0)], num_crossover_points*sizeof(int));
 
     /*sort the points to small-to-big order*/
     qsort(points, sizeof(points)/sizeof(*points), sizeof(points[0]), compare_ints);
     
     /*crossover*/
+    /*
+    for (int i=0; i<num_crossover_points+1; ++i) {
+        if (i%3 == 0) {
+            for (int j=points[i]; j<points[i+1]; ++j) {
+                child[j] = CalcChild(parent1[j], parent2[j], parent3[j]);
+            }
+        }
+        else if (i%3 == 1) {
+            for (int j=points[i]; j<points[i+1]; ++j) {
+                child[j] = CalcChild(parent2[j], parent1[j], parent3[j]);
+            }
+        }
+        else {
+            for (int j=points[i]; j<points[i+1]; ++j) {
+                child[j] = CalcChild(parent3[j], parent1[j], parent2[j]);
+            }
+        }
+    }
+    */
     for (int i=0; i<num_crossover_points+1; ++i) {
         if (i%3 == 0) {
             memcpy(&child[points[i]], &parent1[points[i]], (points[i+1]-points[i])*sizeof(int));
@@ -294,6 +327,7 @@ int thread_part, int num_crossover_points, int rnd_index) {
             memcpy(&child[points[i]], &parent3[points[i]], (points[i+1]-points[i])*sizeof(int));
         }
     }
+    
 }
 
 void* mate_partial(void* arg) {
@@ -311,7 +345,7 @@ void* mate_partial(void* arg) {
         parent3 = survivor_indices[thread_part][parent2];
         num_crossover = (int)(rand()%(PARAMS_MAX_NUM_crossover_points-PARAMS_MIN_NUM_crossover_points) + PARAMS_MIN_NUM_crossover_points);
 
-        if (child % 10 == 0) yates_fischer_shuffle(random_indices[thread_part], PARAMS_genotype_length);
+        if (child % 10 == 0) yates_fischer_shuffle(random_indices[thread_part], PARAMS_genotype_length-2);
 
         mate(GA_pool[cost_and_index[parent1].index], GA_pool[cost_and_index[parent2].index], GA_pool[cost_and_index[parent3].index],\
          GA_pool[cost_and_index[child].index], thread_part, num_crossover, child);
@@ -327,7 +361,7 @@ void* mate_partial(void* arg) {
         parent3 = survivor_indices[thread_part][parent2];
         num_crossover = (int)(rand()%(PARAMS_MAX_NUM_crossover_points-PARAMS_MIN_NUM_crossover_points) + PARAMS_MIN_NUM_crossover_points);
 
-        if (child % 10 == 0) yates_fischer_shuffle(random_indices[thread_part], PARAMS_genotype_length);
+        if (child % 10 == 0) yates_fischer_shuffle(random_indices[thread_part], PARAMS_genotype_length-2);
 
         mate(GA_pool[cost_and_index[parent1].index], GA_pool[cost_and_index[parent2].index], GA_pool[cost_and_index[parent3].index],\
          GA_pool[cost_and_index[child].index], thread_part, num_crossover, child);
@@ -349,18 +383,27 @@ void mate_task() {
 
 void* mutate_partial(void* arg) { 
     int thread_part = THREAD_PART++;
+    int points[(int)((float)PARAMS_genotype_length*PARAMS_mutation_rate*PARAMS_SAMPLING_FACTOR+1.0)];
         
     for (int i = thread_part * (PARAMS_population_size / NUM_THREADS); i < (thread_part + 1) * (PARAMS_population_size / NUM_THREADS); i++) {
         float local_mutation_rate = PARAMS_mutation_rate * (float)(rand()%PARAMS_SAMPLING_FACTOR);
-        int random_index = rand()%((int)(PARAMS_genotype_length-PARAMS_genotype_length*local_mutation_rate));
-        int points[(int)(PARAMS_genotype_length*local_mutation_rate)];
+        int num_mutants = PARAMS_genotype_length*local_mutation_rate;
+        int random_index = rand()%((int)(PARAMS_genotype_length-num_mutants));
 
         if (i % 10 == 0) yates_fischer_shuffle(random_indices[thread_part], PARAMS_genotype_length-2);
 
-        memcpy(&points[0], &random_indices[thread_part][random_index], sizeof(points));
+        memcpy(&points[0], &random_indices[thread_part][random_index], num_mutants*sizeof(int));
 
-        for (int j=0; j<(int)(sizeof(points)/sizeof(int)); ++j) {
-            GA_pool[i][points[j]] = (int)(rand()%PARAMS_zero_padded_sentence_space);
+        for (int j=0; j<num_mutants; ++j) {
+            int low_range = min(GA_pool[i][points[j]], PARAMS_mutation_search_NUM);
+            int up_range = min((PARAMS_zero_padded_sentence_space-GA_pool[i][points[j]]), PARAMS_mutation_search_NUM);
+            int rand_num = (int)(rand()%(low_range+up_range));
+
+            GA_pool[i][points[j]] += rand_num-low_range;
+
+            if ((GA_pool[i][points[j]]<0) || (GA_pool[i][points[j]]>=PARAMS_zero_padded_sentence_space)) {
+                printf("MUTATION ERROR");
+            }
         }
     }
 
@@ -392,7 +435,8 @@ void calc_best_phenotype_distribution(int genotype[]) {
             best_phenotype_distribution[j] += tag_distro_space[(int)genotype[i]][j];
         }
         if (genotype[i]>PARAMS_zero_padded_sentence_space-1) {
-            printf("genotype overflow");
+            printf("ERROR: genotype overflow");
+            exit(EXIT_FAILURE);
         }
     }
     printf("\nBest phenotype has %d syllables.\n", num_syl);
@@ -401,7 +445,7 @@ void calc_best_phenotype_distribution(int genotype[]) {
 
 void cost_curve_to_csv() {
     std::ofstream cost_curve_file;
-    cost_curve_file.open ("ULTRA_cpp_GA_cost_log.csv");
+    cost_curve_file.open (Output_CostCurve_filename);
     for (int i=0; i<PARAMS_epochs; ++i) {
         cost_curve_file << fittest_log[i] << '\n';
     }
@@ -411,7 +455,7 @@ void cost_curve_to_csv() {
 
 void best_genotype_to_csv() {
     std::ofstream genotype_file;
-    genotype_file.open ("ULTRA_cpp_best_genotype.csv");
+    genotype_file.open (Output_Genotype_filename);
     for (int i=0; i<PARAMS_genotype_length; ++i) {
         genotype_file << best_genotype[i] << '\n';
     }
@@ -421,7 +465,7 @@ void best_genotype_to_csv() {
 
 void best_phenotype_distribution_to_csv() {
     std::ofstream phenotype_distribution_file;
-    phenotype_distribution_file.open ("ULTRA_cpp_best_pheno_distro.csv");
+    phenotype_distribution_file.open (Output_PhenotypeDistribution_filename);
     for (int i=0; i<NUM_phones; ++i) {
         phenotype_distribution_file << best_phenotype_distribution[i] << '\n';
     }
@@ -433,7 +477,7 @@ void copy_genotype(int geno_dst[PARAMS_genotype_length], int geno_src[PARAMS_gen
     memcpy(&geno_dst[0], &geno_src[0], PARAMS_genotype_length*sizeof(geno_dst[0]));
 }
 
-int main() {
+int main(int argc, char *argv[]) {
     init_tag_distro_space();
     init_random_indices();
     init_survivor_indices();
@@ -455,6 +499,7 @@ int main() {
 
         /* evaluate and sort population */
         sort_population_by_cost();
+        //printf("Sorted\n");
         fittest_log[epoch] = cost_and_index[0].cost;
         
         if (epoch > PARAMS_epochs*PARAMS_full_total_word_constraint_steady) {
@@ -466,6 +511,7 @@ int main() {
 
         /* mating */
         mate_task();
+        //printf("Mated\n");
 
         /* mutate all */
         if (epoch>(int)((float)PARAMS_epochs*(float)PARAMS_full_total_word_constraint_starts)) {
@@ -475,6 +521,7 @@ int main() {
             PARAMS_mutation_rate = PARAMS_mutation_rate_DEFAULT*PARAMS_HEAT_FACTOR;
         }
         mutate();
+        //printf("Mutated\n");
 
         /* time stops */
         auto t2 = std::chrono::high_resolution_clock::now();
