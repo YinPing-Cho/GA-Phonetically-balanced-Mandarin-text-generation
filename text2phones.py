@@ -28,7 +28,7 @@ def read_text2phones(in_filename, out_filename, num_lines_limit):
     cc = OpenCC('s2t')
     tscc = OpenCC('t2s')
 
-    ws = WS("./data", disable_cuda=True)
+    ws = WS("../data", disable_cuda=True)
 
     count = 0
     vowels = ['a', 'i', 'u', 'e', 'o']
@@ -121,15 +121,17 @@ def Process(args):
     phone_combo_dict = read_text2phones(in_filename=args.in_filename, out_filename=args.out_filename, num_lines_limit=args.num_lines_limit)
     print(phone_combo_dict)
     df = pd.DataFrame(phone_combo_dict, index=[0])
-    df.to_csv('phones_dist_master.csv', index=False)
+    df.to_csv(args.csv_filename, index=False)
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('-i', '--in_filename', type=str, default='wiki_SUBSET.txt',
+    parser.add_argument('-i', '--in_filename', type=str, default='BIG_SUBSET.txt',
                         help="name of the input file (contents Chinese characters)")
-    parser.add_argument('-o', '--out_filename', type=str, default='wiki_PHONED.txt',
+    parser.add_argument('-o', '--out_filename', type=str, default='BIG_PHONED.txt',
                         help="name of the output file (will content pinyins)")
+    parser.add_argument('-c', '--csv_filename', type=str, default='BIG_phones_dist_master.csv',
+                        help="name of the output csv file (will content summed phoneme distribution)")
     parser.add_argument('-n', '--num_lines_limit', type=int, default=np.Inf,
                         help="limit of number of lines to process")
 

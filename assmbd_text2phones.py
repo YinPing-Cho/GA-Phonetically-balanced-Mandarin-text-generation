@@ -121,7 +121,7 @@ def Process(args):
     phone_combo_dict = read_text2phones(in_filename=args.in_filename, out_filename=args.out_filename, num_lines_limit=args.num_lines_limit)
     print(phone_combo_dict)
     df = pd.DataFrame(phone_combo_dict, index=[0])
-    df.to_csv('ULTRA_phones_dist_master.csv', index=False)
+    df.to_csv('phenotype_phones_dist_FINAL.csv', index=False)
 
 
 if __name__ == '__main__':

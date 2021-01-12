@@ -15,6 +15,10 @@ def Average(lst):
 
 def There_is_English(sentence):
     return re.findall("[a-zA-Z]", sentence)
+
+def There_is_Japanese(sentence):
+    return re.findall("[ぁ-ゟ゠-ヿ]", sentence)
+
     
 def splittext(texts):
     checklist=['。', '！', '？', '\n']
@@ -35,34 +39,35 @@ def splittext(texts):
             output_texts.append(foo)
     return output_texts
 
-wiki_sample_portion = 0.1
+wiki_sample_portion = 0.05
 literature_sample_portion = 0.9
-limit = np.inf
+limit = 600000
 count = 1
 sentence_length_upper_limit = 100
 sentence_length_lower_limit = 10
 sentence_lengths = []
 
-text_dir = 'texts'
-with open('ULTRA_SUBSET.txt', 'w', encoding="utf8") as ostr:
-    for file_n in listdir_nohidden(text_dir):
-        filename = os.fsdecode(file_n)
+text_dir = r'..\texts'
+with open('BIG_SUBSET.txt', 'w', encoding="utf8") as ostr:
+    for file in listdir_nohidden(text_dir):
+        filename = os.fsdecode(file)
         if filename.endswith(".txt"):
-            if filename == 'wiki.txt':
-                sample_portion = wiki_sample_portion
-            else:
-                sample_portion = literature_sample_portion
-                
             with open(os.path.join(text_dir, filename), 'r', encoding="utf8") as istr:
                         
                 for paragraph in istr:
                     lines = splittext(paragraph)
                     for line in lines:
+
+                        if filename == 'zz_wiki.txt':
+                            sample_portion = wiki_sample_portion
+                        else:
+                            sample_portion = literature_sample_portion
+                                
                         if len(line) > sentence_length_lower_limit and np.random.rand() < sample_portion:
                             nummer = str(count).zfill(9)
                             line = line.rstrip("\n")
 
-                            if len(line) > sentence_length_upper_limit or There_is_English(line):
+                            if len(line) > sentence_length_upper_limit or There_is_English(line) or There_is_Japanese(line):
                                 continue
 
                             sentence_lengths.append(len(line))
@@ -73,9 +78,9 @@ with open('ULTRA_SUBSET.txt', 'w', encoding="utf8") as ostr:
                             ostr.write(str(line))
                             count += 1
                             print(line)
-                        if count >= limit:
+                        if count > limit:
                             break
-                    if count >= limit:
+                    if count > limit:
                         break
 
 len_max = max(sentence_lengths)
