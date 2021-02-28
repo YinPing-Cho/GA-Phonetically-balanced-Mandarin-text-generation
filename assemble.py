@@ -1,12 +1,12 @@
 import csv
 import numpy as numpy
-
+import os
 import csv
 
-
-genotype_csv_filename = 'ULTRA_cpp_best_genotype.csv'
-all_sentences_filename = 'ULTRA_SUBSET.txt'
-out_filename = 'ULTRA_assembled_text.txt'
+asset_dir = r'.\assets'
+genotype_csv_filename = os.path.join(asset_dir, 'KKBOOKS_best_genotype.csv')
+all_sentences_filename = os.path.join(asset_dir, 'KKBOOKS.txt')
+out_filename = os.path.join(asset_dir, 'KKBOOKS_ASSEMBLED.txt')
 
 genotype_best = []
 all_sentences_dict = {}
@@ -17,7 +17,7 @@ num_chars = 0
 with open(genotype_csv_filename, newline='') as csvfile:
     genotype_csv = csv.reader(csvfile, delimiter=' ', quotechar='|')
     for row in genotype_csv:
-        nummer = str(int(row[0])-1).zfill(9)
+        nummer = str(int(row[0])+1).zfill(9)
         print(nummer)
         genotype_best.append(nummer)
 
@@ -49,4 +49,4 @@ with open(out_filename, 'w', encoding="utf8") as ostr:
         ostr.write(tag+'|'+sentence+'\n')
         num_output_sentences += 1
 
-print("Final text contains {} sentences, with {} chaaracters.".format(num_output_sentences, num_chars))
+print("Final text contains {} sentences, with {} characters.".format(num_output_sentences, num_chars))

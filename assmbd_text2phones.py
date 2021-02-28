@@ -11,6 +11,7 @@ import matplotlib.pyplot as plt
 import argparse
 
 def num2pinyin(line):
+    line = re.sub('[%]', '趴', line)
     line = re.sub('[1]', '一', line)
     line = re.sub('[2]', '二', line)
     line = re.sub('[3]', '三', line)
@@ -21,14 +22,25 @@ def num2pinyin(line):
     line = re.sub('[8]', '八', line)
     line = re.sub('[9]', '九', line)
     line = re.sub('[0]', '零', line)
+    line = re.sub('[％]', '趴', line)
+    line = re.sub('[１]', '一', line)
+    line = re.sub('[２]', '二', line)
+    line = re.sub('[３]', '三', line)
+    line = re.sub('[４]', '四', line)
+    line = re.sub('[５]', '五', line)
+    line = re.sub('[６]', '六', line)
+    line = re.sub('[７]', '七', line)
+    line = re.sub('[８]', '八', line)
+    line = re.sub('[９]', '九', line)
+    line = re.sub('[０]', '零', line)
 
     return line
 
-def read_text2phones(in_filename, out_filename, num_lines_limit):
+def read_text2phones(in_filename, out_filename, asset_dir, num_lines_limit):
     cc = OpenCC('s2t')
     tscc = OpenCC('t2s')
 
-    ws = WS("./data", disable_cuda=True)
+    ws = WS("../data", disable_cuda=True)
 
     count = 0
     vowels = ['a', 'i', 'u', 'e', 'o']
@@ -36,13 +48,14 @@ def read_text2phones(in_filename, out_filename, num_lines_limit):
 
     phone_combo_dict = {}
 
-    with open(out_filename, 'w', encoding="utf8") as ostr:
-        with open(in_filename, 'r', encoding="utf8") as istr:
+    with open(os.path.join(asset_dir, out_filename), 'w', encoding="utf8") as ostr:
+        with open(os.path.join(asset_dir, in_filename), 'r', encoding="utf8") as istr:
 
             for line in istr:
                 line = line.strip().split('|')
                 nummer = line[0]
                 line = line[1]
+                chinese_text = cc.convert(line)
 
                 line = re.sub('[ 	_*()!@#$abcdefghijklmnopqrstuvwxyz。（）！？＊＆＃＠「」———";‘’《》“”；]', '', line)
                 line = num2pinyin(line)
@@ -56,7 +69,7 @@ def read_text2phones(in_filename, out_filename, num_lines_limit):
                     for w in word:
                         sub += w
                     text += sub
-                line = cc.convert(text)
+                line = tscc.convert(text)
                 foo = []
                 foo.append(line)
                 line = foo
@@ -70,6 +83,7 @@ def read_text2phones(in_filename, out_filename, num_lines_limit):
                 for word_line in word_line_list:
                     for word in word_line:
                         if word != '\n':
+                            word = tscc.convert(word)
                             py = pinyin(word, style=Style.TONE3, heteronym=False)
 
                             combo_word = ''
@@ -100,9 +114,8 @@ def read_text2phones(in_filename, out_filename, num_lines_limit):
                     print(line)
                     print(text)
 
-                line = text
-                line = line.rstrip("\n")
-                line += '\n'
+                line = nummer+'|'+chinese_text+'\n'+text
+                line += '\n'+'\n'
                 ostr.write(str(line))
 
                 count+=1
@@ -118,18 +131,21 @@ def read_text2phones(in_filename, out_filename, num_lines_limit):
     return phone_combo_dict
 
 def Process(args):
-    phone_combo_dict = read_text2phones(in_filename=args.in_filename, out_filename=args.out_filename, num_lines_limit=args.num_lines_limit)
+    asset_dir = r'.\assets'
+    phone_combo_dict = read_text2phones(in_filename=args.in_filename, out_filename=args.out_filename, asset_dir=asset_dir, num_lines_limit=args.num_lines_limit)
     print(phone_combo_dict)
     df = pd.DataFrame(phone_combo_dict, index=[0])
-    df.to_csv('phenotype_phones_dist_FINAL.csv', index=False)
+    df.to_csv(os.path.join(asset_dir, args.csv_filename), index=False)
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('-i', '--in_filename', type=str, default='1227_ULTRA_assembled_text.txt',
+    parser.add_argument('-i', '--in_filename', type=str, default='KKBOOKS_ASSEMBLED.txt',
                         help="name of the input file (contents Chinese characters)")
-    parser.add_argument('-o', '--out_filename', type=str, default='ASSMBD_PHONED.txt',
+    parser.add_argument('-o', '--out_filename', type=str, default='KKBOOKS_ASSEMBLED_PHONED.txt',
                         help="name of the output file (will content pinyins)")
+    parser.add_argument('-c', '--csv_filename', type=str, default='KKBOOKS_ASSEMBLED_PHONE_DISTRIBUTION.csv',
+                        help="name of the output csv file (will content distribution of each syllable type)")
     parser.add_argument('-n', '--num_lines_limit', type=int, default=np.Inf,
                         help="limit of number of lines to process")
 

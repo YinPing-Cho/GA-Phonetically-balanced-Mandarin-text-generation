@@ -11,6 +11,7 @@ import matplotlib.pyplot as plt
 import argparse
 
 def num2pinyin(line):
+    line = re.sub('[%]', '趴', line)
     line = re.sub('[1]', '一', line)
     line = re.sub('[2]', '二', line)
     line = re.sub('[3]', '三', line)
@@ -21,6 +22,17 @@ def num2pinyin(line):
     line = re.sub('[8]', '八', line)
     line = re.sub('[9]', '九', line)
     line = re.sub('[0]', '零', line)
+    line = re.sub('[％]', '趴', line)
+    line = re.sub('[１]', '一', line)
+    line = re.sub('[２]', '二', line)
+    line = re.sub('[３]', '三', line)
+    line = re.sub('[４]', '四', line)
+    line = re.sub('[５]', '五', line)
+    line = re.sub('[６]', '六', line)
+    line = re.sub('[７]', '七', line)
+    line = re.sub('[８]', '八', line)
+    line = re.sub('[９]', '九', line)
+    line = re.sub('[０]', '零', line)
 
     return line
 
@@ -36,8 +48,9 @@ def read_text2phones(in_filename, out_filename, num_lines_limit):
 
     phone_combo_dict = {}
 
-    with open(out_filename, 'w', encoding="utf8") as ostr:
-        with open(in_filename, 'r', encoding="utf8") as istr:
+    text_dir = r'.\assets'
+    with open(os.path.join(text_dir, out_filename), 'w', encoding="utf8") as ostr:
+        with open(os.path.join(text_dir, in_filename), 'r', encoding="utf8") as istr:
 
             for line in istr:
                 line = line.strip().split('|')
@@ -70,6 +83,7 @@ def read_text2phones(in_filename, out_filename, num_lines_limit):
                 for word_line in word_line_list:
                     for word in word_line:
                         if word != '\n':
+                            word = tscc.convert(word)
                             py = pinyin(word, style=Style.TONE3, heteronym=False)
 
                             combo_word = ''
@@ -126,11 +140,11 @@ def Process(args):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('-i', '--in_filename', type=str, default='BIG_SUBSET.txt',
+    parser.add_argument('-i', '--in_filename', type=str, default='KKBOOKS.txt',
                         help="name of the input file (contents Chinese characters)")
-    parser.add_argument('-o', '--out_filename', type=str, default='BIG_PHONED.txt',
+    parser.add_argument('-o', '--out_filename', type=str, default='KKBOOKS_PHONED.txt',
                         help="name of the output file (will content pinyins)")
-    parser.add_argument('-c', '--csv_filename', type=str, default='BIG_phones_dist_master.csv',
+    parser.add_argument('-c', '--csv_filename', type=str, default='KKBOOKS_phones_dist_raw.csv',
                         help="name of the output csv file (will content summed phoneme distribution)")
     parser.add_argument('-n', '--num_lines_limit', type=int, default=np.Inf,
                         help="limit of number of lines to process")

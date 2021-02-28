@@ -1,5 +1,6 @@
 import csv
 import re
+import os
 
 def dict_string2int(dicto, set_value=None):
     for key in dicto.keys():
@@ -25,7 +26,7 @@ def sentence2stats(line, phones_dict_per_line):
     
     return index
 
-reader = csv.DictReader(open('ULTRA_phones_dist_master.csv'))
+reader = csv.DictReader(open(r'.\assets\KKBOOKS_phones_dist_raw.csv'))
 phones_dict_master = next(reader)
 phones_dict_per_line = phones_dict_master.copy()
 
@@ -33,9 +34,10 @@ dict_string2int(phones_dict_master)
 dict_string2int(phones_dict_per_line, set_value=0)
 
 write_limit = 1000000
-in_filename = 'ULTRA_PHONED.txt'
-out_filename = 'ULTRA_sentence_phoneDist.csv'
-out_file = open(out_filename, 'w', newline ='')
+text_dir = r'./assets'
+in_filename = 'KKBOOKS_PHONED.txt'
+out_filename = 'KKBOOKS_phone_tags.csv'
+out_file = open(os.path.join(text_dir, out_filename), 'w', newline ='')
 
 
 print(phones_dict_master)
@@ -51,7 +53,7 @@ with out_file:
     write = csv.writer(out_file)
     write.writerows(phone_index)
 
-    with open(in_filename, 'r', encoding="utf8") as istr:
+    with open(os.path.join(text_dir, in_filename), 'r', encoding="utf8") as istr:
         count = 0
         for line in istr:
             if count >= write_limit:
